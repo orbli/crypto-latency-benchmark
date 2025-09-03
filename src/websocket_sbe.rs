@@ -1,15 +1,12 @@
 use colored::*;
 use futures_util::{SinkExt, StreamExt};
 use quanta::Clock;
+use serde_json;
 use std::mem;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use serde_json;
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{
-        protocol::Message,
-        http,
-    }
+    tungstenite::{http, protocol::Message},
 };
 
 // ============================================================================
@@ -35,22 +32,22 @@ const TEMPLATE_ID_DEPTH_DIFF: u16 = 10003;
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct BestBidAskStreamEvent {
-    pub event_time: i64,        // UTC timestamp in microseconds
+    pub event_time: i64, // UTC timestamp in microseconds
     pub book_update_id: i64,
     pub price_exponent: i8,
     pub qty_exponent: i8,
-    pub bid_price: i64,         // Mantissa
-    pub bid_qty: i64,           // Mantissa
-    pub ask_price: i64,         // Mantissa
-    pub ask_qty: i64,           // Mantissa
-    // Symbol follows as variable length string
+    pub bid_price: i64, // Mantissa
+    pub bid_qty: i64,   // Mantissa
+    pub ask_price: i64, // Mantissa
+    pub ask_qty: i64,   // Mantissa
+                        // Symbol follows as variable length string
 }
 
 // Trade message (template 10000)
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct TradeStreamEvent {
-    pub event_time: i64,        // UTC timestamp in microseconds
+    pub event_time: i64, // UTC timestamp in microseconds
     pub transact_time: i64,
     pub price_exponent: i8,
     pub qty_exponent: i8,
@@ -61,8 +58,8 @@ pub struct TradeStreamEvent {
 #[derive(Copy, Clone)]
 pub struct TradeGroupEntry {
     pub id: i64,
-    pub price: i64,             // Mantissa
-    pub qty: i64,               // Mantissa
+    pub price: i64, // Mantissa
+    pub qty: i64,   // Mantissa
     pub is_buyer_maker: u8,
     pub is_best_match: u8,
 }
@@ -92,40 +89,39 @@ impl SbeParser {
     pub fn new() -> Self {
         Self
     }
-    
+
     pub fn parse_header(&self, data: &[u8]) -> Option<SbeMessageHeader> {
         if data.len() < mem::size_of::<SbeMessageHeader>() {
             return None;
         }
-        
-        unsafe {
-            Some(*(data.as_ptr() as *const SbeMessageHeader))
-        }
+
+        unsafe { Some(*(data.as_ptr() as *const SbeMessageHeader)) }
     }
-    
+
     pub fn parse_best_bid_ask(&self, data: &[u8]) -> Option<(BestBidAskStreamEvent, String)> {
         let header_size = mem::size_of::<SbeMessageHeader>();
         if data.len() < header_size + mem::size_of::<BestBidAskStreamEvent>() {
             return None;
         }
-        
-        let event = unsafe {
-            *(data[header_size..].as_ptr() as *const BestBidAskStreamEvent)
-        };
-        
+
+        let event = unsafe { *(data[header_size..].as_ptr() as *const BestBidAskStreamEvent) };
+
         // Parse symbol (variable length string at the end)
         let symbol_offset = header_size + mem::size_of::<BestBidAskStreamEvent>();
         if data.len() > symbol_offset {
             let symbol_len = data[symbol_offset] as usize;
             if data.len() >= symbol_offset + 1 + symbol_len {
-                let symbol = String::from_utf8_lossy(&data[symbol_offset + 1..symbol_offset + 1 + symbol_len]).to_string();
+                let symbol = String::from_utf8_lossy(
+                    &data[symbol_offset + 1..symbol_offset + 1 + symbol_len],
+                )
+                .to_string();
                 return Some((event, symbol));
             }
         }
-        
+
         Some((event, String::new()))
     }
-    
+
     pub fn decode_price(&self, mantissa: i64, exponent: i8) -> f64 {
         (mantissa as f64) * 10_f64.powi(exponent as i32)
     }
@@ -137,13 +133,13 @@ impl SbeParser {
 
 pub fn benchmark_sbe_parsing(iterations: usize) -> (u64, u64, usize, usize) {
     println!("=== WebSocket + SBE Parsing Benchmark ===");
-    
+
     let clock = Clock::new();
     let parser = SbeParser::new();
-    
+
     // Create sample SBE messages
     let mut book_ticker_bytes = Vec::new();
-    
+
     // Add header
     let header = SbeMessageHeader {
         block_length: mem::size_of::<BestBidAskStreamEvent>() as u16,
@@ -151,41 +147,41 @@ pub fn benchmark_sbe_parsing(iterations: usize) -> (u64, u64, usize, usize) {
         schema_id: 1,
         version: 0,
     };
-    
+
     book_ticker_bytes.extend_from_slice(unsafe {
         std::slice::from_raw_parts(
             &header as *const _ as *const u8,
-            mem::size_of::<SbeMessageHeader>()
+            mem::size_of::<SbeMessageHeader>(),
         )
     });
-    
+
     // Add BestBidAsk event
     let best_bid_ask = BestBidAskStreamEvent {
-        event_time: 1234567890123000,  // microseconds
+        event_time: 1234567890123000, // microseconds
         book_update_id: 123456789,
-        price_exponent: -2,  // Prices in cents
-        qty_exponent: -8,    // 8 decimal places
-        bid_price: 5000000,  // $50,000.00
-        bid_qty: 50000000,   // 0.5
-        ask_price: 5000100,  // $50,001.00
-        ask_qty: 30000000,   // 0.3
+        price_exponent: -2, // Prices in cents
+        qty_exponent: -8,   // 8 decimal places
+        bid_price: 5000000, // $50,000.00
+        bid_qty: 50000000,  // 0.5
+        ask_price: 5000100, // $50,001.00
+        ask_qty: 30000000,  // 0.3
     };
-    
+
     book_ticker_bytes.extend_from_slice(unsafe {
         std::slice::from_raw_parts(
             &best_bid_ask as *const _ as *const u8,
-            mem::size_of::<BestBidAskStreamEvent>()
+            mem::size_of::<BestBidAskStreamEvent>(),
         )
     });
-    
+
     // Add symbol
     let symbol = "BTCUSDT";
     book_ticker_bytes.push(symbol.len() as u8);
     book_ticker_bytes.extend_from_slice(symbol.as_bytes());
-    
+
     // Create depth message (simplified)
     let depth_bytes = book_ticker_bytes.clone(); // Reuse for simplicity
-    
+
     // Benchmark bookTicker parsing
     let start = clock.raw();
     for _ in 0..iterations {
@@ -198,7 +194,7 @@ pub fn benchmark_sbe_parsing(iterations: usize) -> (u64, u64, usize, usize) {
     }
     let end = clock.raw();
     let book_ticker_ns = clock.delta(start, end).as_nanos() as u64 / iterations as u64;
-    
+
     // Benchmark depth parsing (using same for simplicity)
     let start = clock.raw();
     for _ in 0..iterations {
@@ -211,11 +207,24 @@ pub fn benchmark_sbe_parsing(iterations: usize) -> (u64, u64, usize, usize) {
     }
     let end = clock.raw();
     let depth_ns = clock.delta(start, end).as_nanos() as u64 / iterations as u64;
-    
-    println!("@bestBidAsk: {} ns/msg ({} bytes)", book_ticker_ns, book_ticker_bytes.len());
-    println!("@depth:      {} ns/msg ({} bytes)", depth_ns, depth_bytes.len());
-    
-    (book_ticker_ns, depth_ns, book_ticker_bytes.len(), depth_bytes.len())
+
+    println!(
+        "@bestBidAsk: {} ns/msg ({} bytes)",
+        book_ticker_ns,
+        book_ticker_bytes.len()
+    );
+    println!(
+        "@depth:      {} ns/msg ({} bytes)",
+        depth_ns,
+        depth_bytes.len()
+    );
+
+    (
+        book_ticker_ns,
+        depth_ns,
+        book_ticker_bytes.len(),
+        depth_bytes.len(),
+    )
 }
 
 // ============================================================================
@@ -224,11 +233,11 @@ pub fn benchmark_sbe_parsing(iterations: usize) -> (u64, u64, usize, usize) {
 
 fn generate_ed25519_signature(api_key: &str, timestamp: u64, private_key_b64: &str) -> String {
     use ring::signature::Ed25519KeyPair;
-    
+
     // Construct the message to sign - parameters sorted alphabetically
     // apiKey comes before timestamp alphabetically
     let message = format!("apiKey={}&timestamp={}", api_key, timestamp);
-    
+
     // Decode the base64-encoded private key
     let private_key_der = match base64::decode(private_key_b64) {
         Ok(key) => key,
@@ -237,16 +246,16 @@ fn generate_ed25519_signature(api_key: &str, timestamp: u64, private_key_b64: &s
             return String::new();
         }
     };
-    
+
     // Extract the 32-byte seed from the PKCS8 DER structure
     // The ED25519 seed starts at offset 16 in the PKCS8 structure
     if private_key_der.len() < 48 {
         eprintln!("Private key too short: {} bytes", private_key_der.len());
         return String::new();
     }
-    
+
     let seed = &private_key_der[16..48];
-    
+
     // Create the key pair from the seed
     let key_pair = match Ed25519KeyPair::from_seed_unchecked(seed) {
         Ok(kp) => kp,
@@ -255,10 +264,10 @@ fn generate_ed25519_signature(api_key: &str, timestamp: u64, private_key_b64: &s
             return String::new();
         }
     };
-    
+
     // Sign the message
     let signature = key_pair.sign(message.as_bytes());
-    
+
     // Return base64-encoded signature
     base64::encode(signature.as_ref())
 }
@@ -286,22 +295,24 @@ impl SbeLatencyStats {
             symbol,
         }
     }
-    
+
     fn add_measurement(&mut self, parsing_ns: u64, msg_size: usize) {
         self.parsing_latencies_ns.push(parsing_ns);
         self.message_sizes.push(msg_size);
         self.message_count += 1;
     }
-    
+
     fn print_report(&self) {
         if self.parsing_latencies_ns.is_empty() {
             println!("No data collected for {} {}", self.symbol, self.stream_type);
             return;
         }
-        
-        let parse_mean = self.parsing_latencies_ns.iter().sum::<u64>() as f64 / self.parsing_latencies_ns.len() as f64;
-        let size_mean = self.message_sizes.iter().sum::<usize>() as f64 / self.message_sizes.len() as f64;
-        
+
+        let parse_mean = self.parsing_latencies_ns.iter().sum::<u64>() as f64
+            / self.parsing_latencies_ns.len() as f64;
+        let size_mean =
+            self.message_sizes.iter().sum::<usize>() as f64 / self.message_sizes.len() as f64;
+
         let mut parse_sorted = self.parsing_latencies_ns.clone();
         parse_sorted.sort_unstable();
         let p50 = parse_sorted[parse_sorted.len() / 2];
@@ -309,35 +320,72 @@ impl SbeLatencyStats {
         let p95 = parse_sorted[parse_sorted.len() * 95 / 100];
         let p99 = parse_sorted[parse_sorted.len() * 99 / 100];
         let p999 = parse_sorted[(parse_sorted.len() * 999 / 1000).min(parse_sorted.len() - 1)];
-        
-        println!("\n{}", format!("=== {} {} (SBE) ===", self.symbol.to_uppercase(), self.stream_type.to_uppercase()).cyan().bold());
-        println!("Messages processed: {}", self.message_count.to_string().green());
+
+        println!(
+            "\n{}",
+            format!(
+                "=== {} {} (SBE) ===",
+                self.symbol.to_uppercase(),
+                self.stream_type.to_uppercase()
+            )
+            .cyan()
+            .bold()
+        );
+        println!(
+            "Messages processed: {}",
+            self.message_count.to_string().green()
+        );
         println!("Average message size: {:.0} bytes", size_mean);
-        
+
         println!("\n{}", "SBE Parsing Latency:".yellow());
-        println!("  Mean:   {:>8.0} ns ({:.3} µs)", parse_mean, parse_mean / 1000.0);
-        println!("  Min:    {:>8} ns ({:.3} µs)", parse_sorted[0], parse_sorted[0] as f64 / 1000.0);
-        println!("  Max:    {:>8} ns ({:.3} µs)", parse_sorted[parse_sorted.len() - 1], parse_sorted[parse_sorted.len() - 1] as f64 / 1000.0);
-        println!("  P50:    {:>8} ns ({:.3} µs) (median)", p50, p50 as f64 / 1000.0);
+        println!(
+            "  Mean:   {:>8.0} ns ({:.3} µs)",
+            parse_mean,
+            parse_mean / 1000.0
+        );
+        println!(
+            "  Min:    {:>8} ns ({:.3} µs)",
+            parse_sorted[0],
+            parse_sorted[0] as f64 / 1000.0
+        );
+        println!(
+            "  Max:    {:>8} ns ({:.3} µs)",
+            parse_sorted[parse_sorted.len() - 1],
+            parse_sorted[parse_sorted.len() - 1] as f64 / 1000.0
+        );
+        println!(
+            "  P50:    {:>8} ns ({:.3} µs) (median)",
+            p50,
+            p50 as f64 / 1000.0
+        );
         println!("  P90:    {:>8} ns ({:.3} µs)", p90, p90 as f64 / 1000.0);
         println!("  P95:    {:>8} ns ({:.3} µs)", p95, p95 as f64 / 1000.0);
         println!("  P99:    {:>8} ns ({:.3} µs)", p99, p99 as f64 / 1000.0);
         println!("  P99.9:  {:>8} ns ({:.3} µs)", p999, p999 as f64 / 1000.0);
-        
+
         println!("\n{}", "Throughput:".green());
         let throughput = 1_000_000_000.0 / parse_mean;
         println!("  {:>.1}M messages/second", throughput / 1_000_000.0);
     }
 }
 
-async fn measure_sbe_stream(symbol: &str, stream_type: &str, api_key: &str, _private_key: &str, duration_secs: u64) -> SbeLatencyStats {
+async fn measure_sbe_stream(
+    symbol: &str,
+    stream_type: &str,
+    api_key: &str,
+    _private_key: &str,
+    duration_secs: u64,
+) -> SbeLatencyStats {
     // SBE market data streams use the same format as JSON but with binary encoding
     // No authentication signature needed, just API key in header
-    let url = format!("wss://stream-sbe.binance.com:9443/ws/{}@{}", 
-                     symbol.to_lowercase(), stream_type);
-    
+    let url = format!(
+        "wss://stream-sbe.binance.com:9443/ws/{}@{}",
+        symbol.to_lowercase(),
+        stream_type
+    );
+
     println!("Connecting to SBE stream: {}@{}...", symbol, stream_type);
-    
+
     // Build request with API key header (Ed25519 key required)
     let request = http::Request::builder()
         .method("GET")
@@ -347,10 +395,13 @@ async fn measure_sbe_stream(symbol: &str, stream_type: &str, api_key: &str, _pri
         .header("Connection", "Upgrade")
         .header("Upgrade", "websocket")
         .header("Sec-WebSocket-Version", "13")
-        .header("Sec-WebSocket-Key", tungstenite::handshake::client::generate_key())
+        .header(
+            "Sec-WebSocket-Key",
+            tungstenite::handshake::client::generate_key(),
+        )
         .body(())
         .unwrap();
-    
+
     let (ws_stream, response) = match connect_async(request).await {
         Ok(conn) => conn,
         Err(e) => {
@@ -360,17 +411,17 @@ async fn measure_sbe_stream(symbol: &str, stream_type: &str, api_key: &str, _pri
             return SbeLatencyStats::new(stream_type.to_string(), symbol.to_string());
         }
     };
-    
+
     println!("Connected! Response status: {}", response.status());
-    
+
     let (_write, mut read) = ws_stream.split();
     let mut stats = SbeLatencyStats::new(stream_type.to_string(), symbol.to_string());
     let parser = SbeParser::new();
     let clock = Clock::new();
     let end_time = Instant::now() + Duration::from_secs(duration_secs);
-    
+
     println!("Collecting SBE data for {} seconds...", duration_secs);
-    
+
     while Instant::now() < end_time {
         match tokio::time::timeout(Duration::from_secs(5), read.next()).await {
             Ok(Some(Ok(Message::Text(text)))) => {
@@ -380,7 +431,7 @@ async fn measure_sbe_stream(symbol: &str, stream_type: &str, api_key: &str, _pri
             Ok(Some(Ok(Message::Binary(data)))) => {
                 // Remove debug print for production
                 let parse_start = clock.raw();
-                
+
                 // Parse SBE message
                 if let Some(header) = parser.parse_header(&data) {
                     match header.template_id {
@@ -396,12 +447,12 @@ async fn measure_sbe_stream(symbol: &str, stream_type: &str, api_key: &str, _pri
                         _ => {}
                     }
                 }
-                
+
                 let parse_end = clock.raw();
                 let parsing_ns = clock.delta(parse_start, parse_end).as_nanos() as u64;
-                
+
                 stats.add_measurement(parsing_ns, data.len());
-                
+
                 // Print progress
                 if stats.message_count % 100 == 0 {
                     print!(".");
@@ -425,17 +476,23 @@ async fn measure_sbe_stream(symbol: &str, stream_type: &str, api_key: &str, _pri
             }
         }
     }
-    
+
     println!("\nData collection complete");
     stats
 }
 
 pub async fn run_sbe_production_benchmark() {
     println!("{}", "=".repeat(80).bright_blue());
-    println!("{}", "WEBSOCKET+SBE PRODUCTION BENCHMARK".bright_white().bold());
-    println!("{}", "Measuring real SBE parsing performance with Binance streams".bright_white());
+    println!(
+        "{}",
+        "WEBSOCKET+SBE PRODUCTION BENCHMARK".bright_white().bold()
+    );
+    println!(
+        "{}",
+        "Measuring real SBE parsing performance with Binance streams".bright_white()
+    );
     println!("{}", "=".repeat(80).bright_blue());
-    
+
     // Load API key directly from .env file (bypass environment variable issues)
     use std::fs;
     let env_content = match fs::read_to_string(".env") {
@@ -446,82 +503,108 @@ pub async fn run_sbe_production_benchmark() {
             return;
         }
     };
-    
+
     let mut api_key = String::new();
     let mut private_key = String::new();
-    
+
     for line in env_content.lines() {
         if line.starts_with("BINANCE_API_KEY=") {
-            api_key = line.strip_prefix("BINANCE_API_KEY=").unwrap_or("").to_string();
+            api_key = line
+                .strip_prefix("BINANCE_API_KEY=")
+                .unwrap_or("")
+                .to_string();
         } else if line.starts_with("BINANCE_API_SECRET=") {
-            private_key = line.strip_prefix("BINANCE_API_SECRET=").unwrap_or("").to_string();
+            private_key = line
+                .strip_prefix("BINANCE_API_SECRET=")
+                .unwrap_or("")
+                .to_string();
         }
     }
-    
+
     if api_key.is_empty() {
         eprintln!("Error: BINANCE_API_KEY not found in .env file");
         eprintln!("Please set your API key in .env file");
         return;
     }
-    
+
     if private_key.is_empty() {
         eprintln!("Error: BINANCE_API_SECRET not found in .env file");
         eprintln!("Please set your ED25519 private key in .env file");
         return;
     }
-    
+
     println!("\n{}", "Configuration:".yellow().bold());
     println!("• Protocol: WebSocket + SBE (Binary)");
-    println!("• API Key: {}...{} (length: {})", &api_key[..4], &api_key[api_key.len()-4..], api_key.len());
+    println!(
+        "• API Key: {}...{} (length: {})",
+        &api_key[..4],
+        &api_key[api_key.len() - 4..],
+        api_key.len()
+    );
     println!("• Endpoint: stream-sbe.binance.com:9443");
-    
+
     let duration = 60; // 1 minute for comprehensive statistics
     let symbols = vec!["btcusdt"];
     // SBE stream names are different from JSON
     let streams = vec!["bestBidAsk", "trade", "depth20"];
-    
+
     println!("• Duration: {} seconds per stream", duration);
     println!("• Symbols: {:?}", symbols);
     println!("• Streams: {:?}", streams);
-    
+
     let mut all_stats = Vec::new();
-    
+
     for symbol in &symbols {
         for stream in &streams {
-            println!("\n{}", format!("Testing {} {}", symbol.to_uppercase(), stream).bright_cyan());
+            println!(
+                "\n{}",
+                format!("Testing {} {}", symbol.to_uppercase(), stream).bright_cyan()
+            );
             let stats = measure_sbe_stream(symbol, stream, &api_key, &private_key, duration).await;
             all_stats.push(stats);
-            
+
             // Small delay between connections
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
     }
-    
+
     // Print report
     println!("\n{}", "=".repeat(80).bright_blue());
     println!("{}", "SBE PERFORMANCE REPORT".bright_white().bold());
     println!("{}", "=".repeat(80).bright_blue());
-    
+
     for stats in &all_stats {
         stats.print_report();
     }
-    
+
     // Summary
     println!("\n{}", "=".repeat(80).bright_blue());
     println!("{}", "SBE vs JSON COMPARISON".bright_white().bold());
     println!("{}", "=".repeat(80).bright_blue());
-    
+
     println!("\n{}", "Key Advantages of SBE:".cyan().bold());
-    println!("• {} - Direct memory access, no parsing", "Zero-copy deserialization".bright_yellow());
-    println!("• {} - ~70% smaller than JSON", "Compact binary format".bright_yellow());
-    println!("• {} - No string parsing or allocation", "Fixed-size fields".bright_yellow());
-    println!("• {} - Can process 100M+ msg/s", "Ultra-low latency".bright_yellow());
-    
+    println!(
+        "• {} - Direct memory access, no parsing",
+        "Zero-copy deserialization".bright_yellow()
+    );
+    println!(
+        "• {} - ~70% smaller than JSON",
+        "Compact binary format".bright_yellow()
+    );
+    println!(
+        "• {} - No string parsing or allocation",
+        "Fixed-size fields".bright_yellow()
+    );
+    println!(
+        "• {} - Can process 100M+ msg/s",
+        "Ultra-low latency".bright_yellow()
+    );
+
     println!("\n{}", "Measured Performance:".green().bold());
     println!("• JSON parsing: ~250-500ns per message");
     println!("• SBE parsing: ~5-20ns per message");
     println!("• Improvement: 25-100x faster parsing");
-    
+
     println!("\n{}", "Note:".red().bold());
     println!("• SBE requires API key authentication");
     println!("• Binary format requires schema knowledge");
