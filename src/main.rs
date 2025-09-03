@@ -19,96 +19,6 @@ fn print_header() {
     println!("{}", "=".repeat(80).bright_blue());
 }
 
-fn print_comparison_table(results: Vec<(&str, u64, u64, usize, usize)>) {
-    println!("\n{}", "PERFORMANCE COMPARISON TABLE".green().bold());
-    println!("{}", "-".repeat(80));
-    println!(
-        "{:<20} {:<15} {:>12} {:>12} {:>12} {:>12}",
-        "Protocol", "Data Type", "Time (ns)", "Size (bytes)", "Throughput", "vs JSON"
-    );
-    println!("{}", "-".repeat(80));
-
-    // Find JSON baseline for comparison
-    let json_book_ns = results
-        .iter()
-        .find(|(p, _, _, _, _)| p.contains("JSON"))
-        .map(|(_, book, _, _, _)| *book)
-        .unwrap_or(1);
-
-    let json_depth_ns = results
-        .iter()
-        .find(|(p, _, _, _, _)| p.contains("JSON"))
-        .map(|(_, _, depth, _, _)| *depth)
-        .unwrap_or(1);
-
-    for (protocol, book_ns, depth_ns, book_size, depth_size) in results {
-        // BookTicker row
-        let book_improvement = json_book_ns as f64 / book_ns.max(1) as f64;
-        println!(
-            "{:<20} {:<15} {:>12} {:>12} {:>12} {:>12}",
-            protocol,
-            "@bookTicker",
-            book_ns,
-            book_size,
-            format!(
-                "{:.1}M msg/s",
-                1_000_000_000.0 / book_ns as f64 / 1_000_000.0
-            ),
-            if book_improvement == 1.0 {
-                "baseline".to_string()
-            } else {
-                format!("{:.1}x", book_improvement)
-            }
-        );
-
-        // Depth row
-        let depth_improvement = json_depth_ns as f64 / depth_ns.max(1) as f64;
-        println!(
-            "{:<20} {:<15} {:>12} {:>12} {:>12} {:>12}",
-            "",
-            "@depth",
-            depth_ns,
-            depth_size,
-            format!(
-                "{:.1}M msg/s",
-                1_000_000_000.0 / depth_ns as f64 / 1_000_000.0
-            ),
-            if depth_improvement == 1.0 {
-                "baseline".to_string()
-            } else {
-                format!("{:.1}x", depth_improvement)
-            }
-        );
-
-        println!("{}", "-".repeat(80));
-    }
-}
-
-fn print_insights() {
-    println!("\n{}", "KEY INSIGHTS".cyan().bold());
-    println!(
-        "• {} - Human readable, widely supported, slowest parsing",
-        "WebSocket+JSON".yellow()
-    );
-    println!(
-        "• {} - Binary format over WebSocket, zero-copy deserialization",
-        "WebSocket+SBE".yellow()
-    );
-    println!(
-        "• {} - Text-based protocol, institutional standard, moderate speed",
-        "FIX Market Data".yellow()
-    );
-    println!();
-    println!("{}", "LATENCY BREAKDOWN".cyan().bold());
-    println!("• Network latency: ~50-100ms (99.9% of total latency)");
-    println!("• Parsing latency: ~100-1000ns (0.001% of total latency)");
-    println!("• SBE advantage: Eliminates parsing entirely via zero-copy");
-    println!();
-    println!("{}", "RECOMMENDATIONS".cyan().bold());
-    println!("• For ultra-low latency: Use SBE with colocation");
-    println!("• For standard trading: JSON is sufficient (parsing is negligible)");
-    println!("• For institutional: FIX provides standardization and audit trails");
-}
 
 #[tokio::main]
 async fn main() {
@@ -133,11 +43,6 @@ async fn main() {
             "fix" => {
                 // Run FIX production benchmark only
                 fix_md::run_fix_production_benchmark().await;
-                return;
-            }
-            "quick" => {
-                // Run quick synthetic benchmarks only
-                run_quick_synthetic_benchmark();
                 return;
             }
             _ => {}
@@ -209,51 +114,14 @@ async fn main() {
     );
     println!("{}", "=".repeat(80).bright_blue());
 
-    // Run quick synthetic benchmark for comparison table
     println!(
         "\n{}",
-        "Running quick synthetic parsing benchmark for comparison...".yellow()
+        "All production benchmarks completed with live market data!".green().bold()
     );
-    let iterations = 100_000; // Reduced for quick results
-
-    let mut results = Vec::new();
-
-    // Quick synthetic benchmarks
-    let (json_book_ns, json_depth_ns, json_book_size, json_depth_size) =
-        websocket_json::benchmark_json_parsing(iterations);
-    results.push((
-        "WebSocket+JSON",
-        json_book_ns,
-        json_depth_ns,
-        json_book_size,
-        json_depth_size,
-    ));
-
-    let (sbe_book_ns, sbe_depth_ns, sbe_book_size, sbe_depth_size) =
-        websocket_sbe::benchmark_sbe_parsing(iterations);
-    results.push((
-        "WebSocket+SBE",
-        sbe_book_ns,
-        sbe_depth_ns,
-        sbe_book_size,
-        sbe_depth_size,
-    ));
-
-    let (fix_book_ns, fix_depth_ns, fix_book_size, fix_depth_size) =
-        fix_md::benchmark_fix_parsing(iterations);
-    results.push((
-        "FIX Market Data",
-        fix_book_ns,
-        fix_depth_ns,
-        fix_book_size,
-        fix_depth_size,
-    ));
-
-    // Print comparison table
-    print_comparison_table(results);
-
-    // Print insights
-    print_insights();
+    println!(
+        "{}",
+        "Refer to the individual benchmark reports above for detailed performance metrics.".bright_white()
+    );
 
     println!("\n{}", "=".repeat(80).bright_blue());
     println!("\n{}", "Available commands:".yellow().bold());
@@ -262,11 +130,7 @@ async fn main() {
         "cargo run --release".bright_white()
     );
     println!(
-        "• {} - Run only quick synthetic benchmarks",
-        "cargo run --release quick".bright_white()
-    );
-    println!(
-        "• {} - Test only JSON streams",
+        "• {} - Test only JSON streams (no API key needed)",
         "cargo run --release json".bright_white()
     );
     println!(
@@ -274,64 +138,8 @@ async fn main() {
         "cargo run --release sbe".bright_white()
     );
     println!(
-        "• {} - Test only FIX market data",
+        "• {} - Test only FIX market data (requires API key)",
         "cargo run --release fix".bright_white()
     );
 }
 
-fn run_quick_synthetic_benchmark() {
-    print_header();
-
-    let iterations = 1_000_000;
-    println!(
-        "\nRunning {} iterations per test...\n",
-        iterations.to_string().bright_yellow()
-    );
-
-    let mut results = Vec::new();
-
-    // Test WebSocket + JSON
-    let (json_book_ns, json_depth_ns, json_book_size, json_depth_size) =
-        websocket_json::benchmark_json_parsing(iterations);
-    results.push((
-        "WebSocket+JSON",
-        json_book_ns,
-        json_depth_ns,
-        json_book_size,
-        json_depth_size,
-    ));
-
-    println!();
-
-    // Test WebSocket + SBE
-    let (sbe_book_ns, sbe_depth_ns, sbe_book_size, sbe_depth_size) =
-        websocket_sbe::benchmark_sbe_parsing(iterations);
-    results.push((
-        "WebSocket+SBE",
-        sbe_book_ns,
-        sbe_depth_ns,
-        sbe_book_size,
-        sbe_depth_size,
-    ));
-
-    println!();
-
-    // Test FIX Market Data
-    let (fix_book_ns, fix_depth_ns, fix_book_size, fix_depth_size) =
-        fix_md::benchmark_fix_parsing(iterations);
-    results.push((
-        "FIX Market Data",
-        fix_book_ns,
-        fix_depth_ns,
-        fix_book_size,
-        fix_depth_size,
-    ));
-
-    // Print comparison table
-    print_comparison_table(results);
-
-    // Print insights
-    print_insights();
-
-    println!("\n{}", "=".repeat(80).bright_blue());
-}

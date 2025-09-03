@@ -87,67 +87,6 @@ impl WebSocketJsonParser {
     }
 }
 
-pub fn benchmark_json_parsing(iterations: usize) -> (u64, u64, usize, usize) {
-    println!("=== WebSocket + JSON Parsing Benchmark ===");
-
-    let clock = Clock::new();
-    let parser = WebSocketJsonParser::new();
-
-    // Sample messages from Binance WebSocket
-    let book_ticker_json = r#"{
-        "e":"bookTicker",
-        "u":123456789,
-        "s":"BTCUSDT",
-        "b":"50000.00",
-        "B":"0.50000",
-        "a":"50001.00",
-        "A":"0.30000"
-    }"#;
-
-    let depth_json = r#"{
-        "e":"depthUpdate",
-        "E":1234567890123,
-        "s":"BTCUSDT",
-        "U":123456780,
-        "u":123456790,
-        "b":[["50000.00","0.50000"],["49999.00","1.00000"],["49998.00","0.75000"]],
-        "a":[["50001.00","0.30000"],["50002.00","0.80000"],["50003.00","0.25000"]]
-    }"#;
-
-    // Benchmark bookTicker parsing
-    let start = clock.raw();
-    for _ in 0..iterations {
-        let _ = parser.parse_book_ticker(book_ticker_json);
-    }
-    let end = clock.raw();
-    let book_ticker_ns = clock.delta(start, end).as_nanos() as u64 / iterations as u64;
-
-    // Benchmark depth parsing
-    let start = clock.raw();
-    for _ in 0..iterations {
-        let _ = parser.parse_depth(depth_json);
-    }
-    let end = clock.raw();
-    let depth_ns = clock.delta(start, end).as_nanos() as u64 / iterations as u64;
-
-    println!(
-        "@bookTicker: {} ns/msg ({} bytes)",
-        book_ticker_ns,
-        book_ticker_json.len()
-    );
-    println!(
-        "@depth:      {} ns/msg ({} bytes)",
-        depth_ns,
-        depth_json.len()
-    );
-
-    (
-        book_ticker_ns,
-        depth_ns,
-        book_ticker_json.len(),
-        depth_json.len(),
-    )
-}
 
 // ============================================================================
 // PRODUCTION LATENCY MEASUREMENT
