@@ -42,7 +42,6 @@ pub struct BestBidAskStreamEvent {
                         // Symbol follows as variable length string
 }
 
-
 // ============================================================================
 // SBE PARSER
 // ============================================================================
@@ -85,9 +84,7 @@ impl SbeParser {
 
         Some((event, String::new()))
     }
-
 }
-
 
 // ============================================================================
 // PRODUCTION SBE BENCHMARK WITH REAL BINANCE CONNECTION
@@ -374,7 +371,11 @@ pub async fn run_sbe_production_benchmark() {
             "\n{}",
             format!("Testing {} with parallel streams", symbol.to_uppercase()).bright_cyan()
         );
-        println!("Starting {} streams concurrently for {} seconds...", streams.len(), duration);
+        println!(
+            "Starting {} streams concurrently for {} seconds...",
+            streams.len(),
+            duration
+        );
 
         // Create tasks for parallel execution of all streams
         let stream_tasks: Vec<_> = streams
@@ -384,7 +385,11 @@ pub async fn run_sbe_production_benchmark() {
                 let stream = stream.to_string();
                 let api_key = api_key.clone();
                 tokio::spawn(async move {
-                    println!("  [{}] Starting stream: {}...", symbol.to_uppercase(), stream);
+                    println!(
+                        "  [{}] Starting stream: {}...",
+                        symbol.to_uppercase(),
+                        stream
+                    );
                     let stats = measure_sbe_stream(&symbol, &stream, &api_key, duration).await;
                     println!("  [{}] Completed stream: {}", symbol.to_uppercase(), stream);
                     stats

@@ -1,3 +1,4 @@
+use base64::{Engine as _, engine::general_purpose};
 use colored::*;
 use quanta::Clock;
 use rustls::pki_types::ServerName;
@@ -7,7 +8,6 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::{TlsConnector, rustls};
-use base64::{Engine as _, engine::general_purpose};
 
 // FIX Protocol constants
 const SOH: char = '\x01'; // Field delimiter
@@ -19,7 +19,6 @@ const TAG_MSG_TYPE: u32 = 35;
 // Message types (only the ones actually used)
 const MSG_TYPE_LOGON: &str = "A";
 const MSG_TYPE_MARKET_DATA_REQUEST: &str = "V";
-
 
 // ============================================================================
 // FIX SESSION MANAGEMENT
@@ -245,7 +244,6 @@ impl FixMdParser {
 
         fields
     }
-
 }
 
 // ============================================================================
