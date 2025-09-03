@@ -1,5 +1,9 @@
 # Crypto Market Data Latency Benchmark
 
+[![CI](https://github.com/orbli/crypto-latency-benchmark/workflows/CI/badge.svg)](https://github.com/orbli/crypto-latency-benchmark/actions)
+[![Rust](https://img.shields.io/badge/rust-2024%20edition-orange.svg)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A comprehensive Rust benchmark suite comparing parsing performance of different cryptocurrency market data protocols for ultra-low latency trading.
 
 ## 🚀 Overview
