@@ -312,26 +312,24 @@ impl FixMdParser {
         // Parse MD entries
         if let Some(num_entries) = fields.get(&TAG_NO_MD_ENTRIES)?.parse::<usize>().ok() {
             for i in 0..num_entries {
-                if let Some(entry_type) = fields.get(&(TAG_MD_ENTRY_TYPE + i as u32)) {
-                    if let Some(price) = fields.get(&(TAG_MD_ENTRY_PX + i as u32)) {
-                        if let Some(size) = fields.get(&(TAG_MD_ENTRY_SIZE + i as u32)) {
-                            let price_val = price.parse::<f64>().unwrap_or(0.0);
-                            let size_val = size.parse::<f64>().unwrap_or(0.0);
+                if let Some(entry_type) = fields.get(&(TAG_MD_ENTRY_TYPE + i as u32))
+                    && let Some(price) = fields.get(&(TAG_MD_ENTRY_PX + i as u32))
+                    && let Some(size) = fields.get(&(TAG_MD_ENTRY_SIZE + i as u32)) {
+                        let price_val = price.parse::<f64>().unwrap_or(0.0);
+                        let size_val = size.parse::<f64>().unwrap_or(0.0);
 
-                            match entry_type.chars().next() {
-                                Some(MD_ENTRY_TYPE_BID) => {
-                                    bid_price = price_val;
-                                    bid_qty = size_val;
-                                }
-                                Some(MD_ENTRY_TYPE_OFFER) => {
-                                    ask_price = price_val;
-                                    ask_qty = size_val;
-                                }
-                                _ => {}
+                        match entry_type.chars().next() {
+                            Some(MD_ENTRY_TYPE_BID) => {
+                                bid_price = price_val;
+                                bid_qty = size_val;
                             }
+                            Some(MD_ENTRY_TYPE_OFFER) => {
+                                ask_price = price_val;
+                                ask_qty = size_val;
+                            }
+                            _ => {}
                         }
                     }
-                }
             }
         }
 
@@ -447,8 +445,8 @@ async fn run_fix_session(
                             message_count += 1;
 
                             // Log first few messages for debugging
-                            if message_count <= 5 {
-                                if let Some(msg_type) = fields.get(&TAG_MSG_TYPE) {
+                            if message_count <= 5
+                                && let Some(msg_type) = fields.get(&TAG_MSG_TYPE) {
                                     let msg_type_name = match msg_type.as_str() {
                                         "A" => "Logon",
                                         "0" => "Heartbeat",
@@ -486,7 +484,6 @@ async fn run_fix_session(
                                         }
                                     }
                                 }
-                            }
 
                             // Print progress
                             if message_count % 10 == 0 {

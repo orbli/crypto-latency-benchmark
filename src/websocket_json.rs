@@ -308,8 +308,8 @@ async fn measure_combined_streams(
         match tokio::time::timeout(Duration::from_secs(5), read.next()).await {
             Ok(Some(Ok(Message::Text(text)))) => {
                 // Combined stream wraps messages in a data field
-                if let Ok(wrapper) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let Some(data) = wrapper.get("data") {
+                if let Ok(wrapper) = serde_json::from_str::<serde_json::Value>(&text)
+                    && let Some(data) = wrapper.get("data") {
                         let parse_start = clock.raw();
 
                         // Determine message type and parse accordingly
@@ -350,8 +350,8 @@ async fn measure_combined_streams(
                             (receive_time_ms as i64 - event_time_ms as i64).abs() as f64;
 
                         // Filter out obviously wrong timestamps (> 1 second difference)
-                        if network_latency_ms < 1000.0 {
-                            if let Some(stats) = stats_map.get_mut(stream_type) {
+                        if network_latency_ms < 1000.0
+                            && let Some(stats) = stats_map.get_mut(stream_type) {
                                 stats.add_measurement(network_latency_ms, parsing_ns);
                                 total_messages += 1;
 
@@ -362,9 +362,7 @@ async fn measure_combined_streams(
                                     std::io::stdout().flush().unwrap();
                                 }
                             }
-                        }
                     }
-                }
             }
             Ok(Some(Ok(Message::Close(_)))) => {
                 println!("\nStream closed");
