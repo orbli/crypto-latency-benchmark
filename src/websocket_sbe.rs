@@ -187,9 +187,10 @@ pub fn benchmark_sbe_parsing(iterations: usize) -> (u64, u64, usize, usize) {
     for _ in 0..iterations {
         let header = parser.parse_header(&book_ticker_bytes);
         if let Some(h) = header
-            && h.template_id == TEMPLATE_ID_BEST_BID_ASK {
-                let _ = parser.parse_best_bid_ask(&book_ticker_bytes);
-            }
+            && h.template_id == TEMPLATE_ID_BEST_BID_ASK
+        {
+            let _ = parser.parse_best_bid_ask(&book_ticker_bytes);
+        }
     }
     let end = clock.raw();
     let book_ticker_ns = clock.delta(start, end).as_nanos() as u64 / iterations as u64;
@@ -199,9 +200,10 @@ pub fn benchmark_sbe_parsing(iterations: usize) -> (u64, u64, usize, usize) {
     for _ in 0..iterations {
         let header = parser.parse_header(&depth_bytes);
         if let Some(h) = header
-            && h.template_id == TEMPLATE_ID_BEST_BID_ASK {
-                let _ = parser.parse_best_bid_ask(&depth_bytes);
-            }
+            && h.template_id == TEMPLATE_ID_BEST_BID_ASK
+        {
+            let _ = parser.parse_best_bid_ask(&depth_bytes);
+        }
     }
     let end = clock.raw();
     let depth_ns = clock.delta(start, end).as_nanos() as u64 / iterations as u64;

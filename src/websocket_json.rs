@@ -309,60 +309,62 @@ async fn measure_combined_streams(
             Ok(Some(Ok(Message::Text(text)))) => {
                 // Combined stream wraps messages in a data field
                 if let Ok(wrapper) = serde_json::from_str::<serde_json::Value>(&text)
-                    && let Some(data) = wrapper.get("data") {
-                        let parse_start = clock.raw();
+                    && let Some(data) = wrapper.get("data")
+                {
+                    let parse_start = clock.raw();
 
-                        // Determine message type and parse accordingly
-                        let (stream_type, event_time_ms) = if let Some(event_type) = data.get("e") {
-                            match event_type.as_str() {
-                                Some("bookTicker") => {
-                                    let event_time = data
-                                        .get("E")
-                                        .and_then(|v| v.as_u64())
-                                        .unwrap_or(receive_time_ms);
-                                    ("bookTicker", event_time)
-                                }
-                                Some("depthUpdate") => {
-                                    let event_time = data
-                                        .get("E")
-                                        .and_then(|v| v.as_u64())
-                                        .unwrap_or(receive_time_ms);
-                                    ("depth@100ms", event_time)
-                                }
-                                Some("trade") => {
-                                    let event_time = data
-                                        .get("E")
-                                        .and_then(|v| v.as_u64())
-                                        .unwrap_or(receive_time_ms);
-                                    ("trade", event_time)
-                                }
-                                _ => continue,
+                    // Determine message type and parse accordingly
+                    let (stream_type, event_time_ms) = if let Some(event_type) = data.get("e") {
+                        match event_type.as_str() {
+                            Some("bookTicker") => {
+                                let event_time = data
+                                    .get("E")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(receive_time_ms);
+                                ("bookTicker", event_time)
                             }
-                        } else {
-                            continue;
-                        };
-
-                        let parse_end = clock.raw();
-                        let parsing_ns = clock.delta(parse_start, parse_end).as_nanos() as u64;
-
-                        // Calculate network latency
-                        let network_latency_ms =
-                            (receive_time_ms as i64 - event_time_ms as i64).abs() as f64;
-
-                        // Filter out obviously wrong timestamps (> 1 second difference)
-                        if network_latency_ms < 1000.0
-                            && let Some(stats) = stats_map.get_mut(stream_type) {
-                                stats.add_measurement(network_latency_ms, parsing_ns);
-                                total_messages += 1;
-
-                                // Print progress every 100 messages
-                                if total_messages % 100 == 0 {
-                                    print!(".");
-                                    use std::io::Write;
-                                    std::io::stdout().flush().unwrap();
-                                }
+                            Some("depthUpdate") => {
+                                let event_time = data
+                                    .get("E")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(receive_time_ms);
+                                ("depth@100ms", event_time)
                             }
+                            Some("trade") => {
+                                let event_time = data
+                                    .get("E")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(receive_time_ms);
+                                ("trade", event_time)
+                            }
+                            _ => continue,
+                        }
+                    } else {
+                        continue;
+                    };
+
+                    let parse_end = clock.raw();
+                    let parsing_ns = clock.delta(parse_start, parse_end).as_nanos() as u64;
+
+                    // Calculate network latency
+                    let network_latency_ms =
+                        (receive_time_ms as i64 - event_time_ms as i64).abs() as f64;
+
+                    // Filter out obviously wrong timestamps (> 1 second difference)
+                    if network_latency_ms < 1000.0
+                        && let Some(stats) = stats_map.get_mut(stream_type)
+                    {
+                        stats.add_measurement(network_latency_ms, parsing_ns);
+                        total_messages += 1;
+
+                        // Print progress every 100 messages
+                        if total_messages % 100 == 0 {
+                            print!(".");
+                            use std::io::Write;
+                            std::io::stdout().flush().unwrap();
+                        }
                     }
+                }
             }
             Ok(Some(Ok(Message::Close(_)))) => {
                 println!("\nStream closed");
