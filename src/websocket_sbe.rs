@@ -1,9 +1,8 @@
 use colored::*;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use quanta::Clock;
-use serde_json;
 use std::mem;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{http, protocol::Message},
@@ -43,41 +42,6 @@ pub struct BestBidAskStreamEvent {
                         // Symbol follows as variable length string
 }
 
-// Trade message (template 10000)
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct TradeStreamEvent {
-    pub event_time: i64, // UTC timestamp in microseconds
-    pub transact_time: i64,
-    pub price_exponent: i8,
-    pub qty_exponent: i8,
-    // Followed by repeating group
-}
-
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct TradeGroupEntry {
-    pub id: i64,
-    pub price: i64, // Mantissa
-    pub qty: i64,   // Mantissa
-    pub is_buyer_maker: u8,
-    pub is_best_match: u8,
-}
-
-// Group size encoding
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct GroupSizeEncoding {
-    pub block_length: u16,
-    pub num_in_group: u32,
-}
-
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct GroupSize16Encoding {
-    pub block_length: u16,
-    pub num_in_group: u16,
-}
 
 // ============================================================================
 // SBE PARSER
@@ -122,55 +86,8 @@ impl SbeParser {
         Some((event, String::new()))
     }
 
-    pub fn decode_price(&self, mantissa: i64, exponent: i8) -> f64 {
-        (mantissa as f64) * 10_f64.powi(exponent as i32)
-    }
 }
 
-// ============================================================================
-// ED25519 SIGNATURE GENERATION
-// ============================================================================
-
-fn generate_ed25519_signature(api_key: &str, timestamp: u64, private_key_b64: &str) -> String {
-    use ring::signature::Ed25519KeyPair;
-
-    // Construct the message to sign - parameters sorted alphabetically
-    // apiKey comes before timestamp alphabetically
-    let message = format!("apiKey={}&timestamp={}", api_key, timestamp);
-
-    // Decode the base64-encoded private key
-    let private_key_der = match base64::decode(private_key_b64) {
-        Ok(key) => key,
-        Err(e) => {
-            eprintln!("Failed to decode private key: {}", e);
-            return String::new();
-        }
-    };
-
-    // Extract the 32-byte seed from the PKCS8 DER structure
-    // The ED25519 seed starts at offset 16 in the PKCS8 structure
-    if private_key_der.len() < 48 {
-        eprintln!("Private key too short: {} bytes", private_key_der.len());
-        return String::new();
-    }
-
-    let seed = &private_key_der[16..48];
-
-    // Create the key pair from the seed
-    let key_pair = match Ed25519KeyPair::from_seed_unchecked(seed) {
-        Ok(kp) => kp,
-        Err(e) => {
-            eprintln!("Failed to create key pair: {:?}", e);
-            return String::new();
-        }
-    };
-
-    // Sign the message
-    let signature = key_pair.sign(message.as_bytes());
-
-    // Return base64-encoded signature
-    base64::encode(signature.as_ref())
-}
 
 // ============================================================================
 // PRODUCTION SBE BENCHMARK WITH REAL BINANCE CONNECTION
@@ -273,11 +190,9 @@ async fn measure_sbe_stream(
     symbol: &str,
     stream_type: &str,
     api_key: &str,
-    _private_key: &str,
     duration_secs: u64,
 ) -> SbeLatencyStats {
-    // SBE market data streams use the same format as JSON but with binary encoding
-    // No authentication signature needed, just API key in header
+    // SBE market data streams require API key in header but no signature
     let url = format!(
         "wss://stream-sbe.binance.com:9443/ws/{}@{}",
         symbol.to_lowercase(),
@@ -286,7 +201,7 @@ async fn measure_sbe_stream(
 
     println!("Connecting to SBE stream: {}@{}...", symbol, stream_type);
 
-    // Build request with API key header (Ed25519 key required)
+    // Build request with API key header (no signature required)
     let request = http::Request::builder()
         .method("GET")
         .uri(&url)
@@ -307,7 +222,7 @@ async fn measure_sbe_stream(
         Err(e) => {
             eprintln!("Failed to connect to SBE stream: {}", e);
             eprintln!("URL: {}", url);
-            eprintln!("Note: SBE streams require Ed25519 API key in X-MBX-APIKEY header");
+            eprintln!("Note: SBE streams require API key in X-MBX-APIKEY header");
             return SbeLatencyStats::new(stream_type.to_string(), symbol.to_string());
         }
     };
@@ -455,16 +370,32 @@ pub async fn run_sbe_production_benchmark() {
     let mut all_stats = Vec::new();
 
     for symbol in &symbols {
-        for stream in &streams {
-            println!(
-                "\n{}",
-                format!("Testing {} {}", symbol.to_uppercase(), stream).bright_cyan()
-            );
-            let stats = measure_sbe_stream(symbol, stream, &api_key, &private_key, duration).await;
-            all_stats.push(stats);
+        println!(
+            "\n{}",
+            format!("Testing {} with parallel streams", symbol.to_uppercase()).bright_cyan()
+        );
+        println!("Starting {} streams concurrently for {} seconds...", streams.len(), duration);
 
-            // Small delay between connections
-            tokio::time::sleep(Duration::from_secs(2)).await;
+        // Create tasks for parallel execution of all streams
+        let stream_tasks: Vec<_> = streams
+            .iter()
+            .map(|stream| {
+                let symbol = symbol.to_string();
+                let stream = stream.to_string();
+                let api_key = api_key.clone();
+                tokio::spawn(async move {
+                    println!("  [{}] Starting stream: {}...", symbol.to_uppercase(), stream);
+                    let stats = measure_sbe_stream(&symbol, &stream, &api_key, duration).await;
+                    println!("  [{}] Completed stream: {}", symbol.to_uppercase(), stream);
+                    stats
+                })
+            })
+            .collect();
+
+        // Wait for all streams to complete in parallel
+        for task in stream_tasks {
+            let stats = task.await.unwrap();
+            all_stats.push(stats);
         }
     }
 
@@ -506,7 +437,7 @@ pub async fn run_sbe_production_benchmark() {
     println!("• Improvement: 25-100x faster parsing");
 
     println!("\n{}", "Note:".red().bold());
-    println!("• SBE requires API key authentication");
+    println!("• SBE requires API key (no signature needed)");
     println!("• Binary format requires schema knowledge");
     println!("• Best for ultra-low latency requirements");
 }

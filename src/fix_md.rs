@@ -3,71 +3,23 @@ use quanta::Clock;
 use rustls::pki_types::ServerName;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::{TlsConnector, rustls};
+use base64::{Engine as _, engine::general_purpose};
 
 // FIX Protocol constants
 const SOH: char = '\x01'; // Field delimiter
 const SOH_BYTE: u8 = 0x01;
 
-// FIX field tags for market data (from Binance fix-md schema)
+// FIX field tags (only the ones actually used)
 const TAG_MSG_TYPE: u32 = 35;
-const TAG_SENDER_COMP_ID: u32 = 49;
-const TAG_TARGET_COMP_ID: u32 = 56;
-const TAG_MSG_SEQ_NUM: u32 = 34;
-const TAG_SENDING_TIME: u32 = 52;
-const TAG_ENCRYPT_METHOD: u32 = 98;
-const TAG_HEARTBEAT_INT: u32 = 108;
-const TAG_RESET_SEQ_NUM: u32 = 141;
-const TAG_USERNAME: u32 = 553;
-const TAG_RAW_DATA: u32 = 96;
-const TAG_RAW_DATA_LENGTH: u32 = 95;
-const TAG_CHECKSUM: u32 = 10;
-const TAG_SYMBOL: u32 = 55;
-const TAG_MD_REQ_ID: u32 = 262;
-const TAG_SUBSCRIPTION_REQUEST_TYPE: u32 = 263;
-const TAG_MARKET_DEPTH: u32 = 264;
-const TAG_MD_UPDATE_TYPE: u32 = 265;
-const TAG_NO_MD_ENTRY_TYPES: u32 = 267;
-const TAG_NO_MD_ENTRIES: u32 = 268;
-const TAG_MD_ENTRY_TYPE: u32 = 269;
-const TAG_MD_ENTRY_PX: u32 = 270;
-const TAG_MD_ENTRY_SIZE: u32 = 271;
-const TAG_NO_RELATED_SYM: u32 = 146;
 
-// Message types
+// Message types (only the ones actually used)
 const MSG_TYPE_LOGON: &str = "A";
-const MSG_TYPE_HEARTBEAT: &str = "0";
-const MSG_TYPE_TEST_REQUEST: &str = "1";
-const MSG_TYPE_LOGOUT: &str = "5";
 const MSG_TYPE_MARKET_DATA_REQUEST: &str = "V";
-const MSG_TYPE_MARKET_DATA_SNAPSHOT: &str = "W";
-const MSG_TYPE_MARKET_DATA_INCREMENTAL: &str = "X";
 
-// MD Entry Types
-const MD_ENTRY_TYPE_BID: char = '0';
-const MD_ENTRY_TYPE_OFFER: char = '1';
-const MD_ENTRY_TYPE_TRADE: char = '2';
-
-// ============================================================================
-// FIX MESSAGE STRUCTURES
-// ============================================================================
-
-pub struct FixBookTicker {
-    pub symbol: String,
-    pub bid_price: f64,
-    pub bid_qty: f64,
-    pub ask_price: f64,
-    pub ask_qty: f64,
-}
-
-pub struct FixDepthUpdate {
-    pub symbol: String,
-    pub bids: Vec<(f64, f64)>, // (price, quantity)
-    pub asks: Vec<(f64, f64)>,
-}
 
 // ============================================================================
 // FIX SESSION MANAGEMENT
@@ -105,7 +57,7 @@ impl FixSession {
 
     fn sign_message(&self, payload: &str) -> String {
         // Parse PEM-encoded ED25519 private key and sign the payload
-        use ring::signature::{Ed25519KeyPair, KeyPair};
+        use ring::signature::Ed25519KeyPair;
 
         // The private_key should be PEM format after base64 decoding from .env
         let pem_str = String::from_utf8_lossy(&self.private_key);
@@ -131,7 +83,7 @@ impl FixSession {
             }
 
             // Decode the base64 content to get the DER-encoded key
-            match base64::decode(&b64_content) {
+            match general_purpose::STANDARD.decode(&b64_content) {
                 Ok(der_bytes) => der_bytes,
                 Err(e) => {
                     eprintln!("Failed to decode PEM content: {}", e);
@@ -146,7 +98,7 @@ impl FixSession {
         // Try to parse as PKCS8 DER format
         if let Ok(key_pair) = Ed25519KeyPair::from_pkcs8(&key_data) {
             let signature = key_pair.sign(payload.as_bytes());
-            return base64::encode(signature.as_ref());
+            return general_purpose::STANDARD.encode(signature.as_ref());
         }
 
         // PKCS8 v1 ED25519 structure typically has the 32-byte seed at offset 16
@@ -154,7 +106,7 @@ impl FixSession {
             // Common PKCS8 v1 format for ED25519
             if let Ok(key_pair) = Ed25519KeyPair::from_seed_unchecked(&key_data[16..48]) {
                 let signature = key_pair.sign(payload.as_bytes());
-                return base64::encode(signature.as_ref());
+                return general_purpose::STANDARD.encode(signature.as_ref());
             }
         }
 
@@ -169,7 +121,7 @@ impl FixSession {
                     Ed25519KeyPair::from_seed_unchecked(&key_data[pos + 2..pos + 34])
                 {
                     let signature = key_pair.sign(payload.as_bytes());
-                    return base64::encode(signature.as_ref());
+                    return general_purpose::STANDARD.encode(signature.as_ref());
                 }
             }
         }
@@ -294,54 +246,6 @@ impl FixMdParser {
         fields
     }
 
-    pub fn parse_book_ticker(&self, fix_msg: &str) -> Option<FixBookTicker> {
-        let fields = self.parse_message(fix_msg);
-
-        if fields.get(&TAG_MSG_TYPE)? != MSG_TYPE_MARKET_DATA_INCREMENTAL
-            && fields.get(&TAG_MSG_TYPE)? != MSG_TYPE_MARKET_DATA_SNAPSHOT
-        {
-            return None;
-        }
-
-        let symbol = fields.get(&TAG_SYMBOL)?.clone();
-        let mut bid_price = 0.0;
-        let mut bid_qty = 0.0;
-        let mut ask_price = 0.0;
-        let mut ask_qty = 0.0;
-
-        // Parse MD entries
-        if let Some(num_entries) = fields.get(&TAG_NO_MD_ENTRIES)?.parse::<usize>().ok() {
-            for i in 0..num_entries {
-                if let Some(entry_type) = fields.get(&(TAG_MD_ENTRY_TYPE + i as u32))
-                    && let Some(price) = fields.get(&(TAG_MD_ENTRY_PX + i as u32))
-                    && let Some(size) = fields.get(&(TAG_MD_ENTRY_SIZE + i as u32))
-                {
-                    let price_val = price.parse::<f64>().unwrap_or(0.0);
-                    let size_val = size.parse::<f64>().unwrap_or(0.0);
-
-                    match entry_type.chars().next() {
-                        Some(MD_ENTRY_TYPE_BID) => {
-                            bid_price = price_val;
-                            bid_qty = size_val;
-                        }
-                        Some(MD_ENTRY_TYPE_OFFER) => {
-                            ask_price = price_val;
-                            ask_qty = size_val;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-
-        Some(FixBookTicker {
-            symbol,
-            bid_price,
-            bid_qty,
-            ask_price,
-            ask_qty,
-        })
-    }
 }
 
 // ============================================================================
@@ -665,7 +569,7 @@ pub async fn run_fix_production_benchmark() {
     // Handle the private key - it might be double base64 encoded
     let private_key = if private_key_env.starts_with("LS0tLS1CRUdJTi") {
         // This is base64 of "-----BEGIN", so it's double-encoded
-        match base64::decode(&private_key_env) {
+        match general_purpose::STANDARD.decode(&private_key_env) {
             Ok(pem_bytes) => pem_bytes,
             Err(e) => {
                 eprintln!("Failed to decode base64 private key: {}", e);
@@ -677,7 +581,7 @@ pub async fn run_fix_production_benchmark() {
         private_key_env.into_bytes()
     } else {
         // Try as base64
-        match base64::decode(&private_key_env) {
+        match general_purpose::STANDARD.decode(&private_key_env) {
             Ok(key) => key,
             Err(_) => private_key_env.into_bytes(), // Use as-is
         }

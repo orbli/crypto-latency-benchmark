@@ -67,25 +67,6 @@ struct TradeMessage {
     trade_time: u64,
 }
 
-// ============================================================================
-// SYNTHETIC PARSING BENCHMARK
-// ============================================================================
-
-pub struct WebSocketJsonParser;
-
-impl WebSocketJsonParser {
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub fn parse_book_ticker(&self, json_str: &str) -> Result<BookTickerJson, serde_json::Error> {
-        serde_json::from_str(json_str)
-    }
-
-    pub fn parse_depth(&self, json_str: &str) -> Result<DepthUpdateJson, serde_json::Error> {
-        serde_json::from_str(json_str)
-    }
-}
 
 // ============================================================================
 // PRODUCTION LATENCY MEASUREMENT

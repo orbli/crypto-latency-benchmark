@@ -84,17 +84,26 @@ jobs:
         EOF
         echo "✅ .env file created successfully"
 
-    - name: Run Full Production Benchmark
+    - name: Run Production Benchmark (JSON + FIX only)
       run: |
-        echo "🚀 Running full production benchmark with all three protocols..."
-        echo "This will test real Binance market data streams with API authentication"
-        echo "Expected runtime: ~3 minutes (60 seconds per protocol + startup)"
+        echo "🚀 Running production benchmark with JSON and FIX protocols..."
+        echo "Note: SBE benchmark disabled due to 451 legal restrictions in GitHub Actions"
+        echo "This will test real Binance market data streams"
+        echo "Expected runtime: ~2 minutes (60 seconds per protocol + startup)"
         echo ""
         echo "API Key configured: $(head -c 10 .env | tail -c 4)...$(tail -c 10 .env | head -c 4)"
         echo ""
-        cargo run --release
+        echo "Running JSON WebSocket benchmark..."
+        cargo run --release json
         echo ""
-        echo "✅ Full benchmark completed successfully!"
+        echo "Running FIX Market Data benchmark..."
+        cargo run --release fix
+        echo ""
+        # SBE benchmark commented out due to HTTP 451 errors in CI:
+        # echo "Running SBE WebSocket benchmark..."
+        # cargo run --release sbe
+        echo "✅ Available benchmarks completed successfully!"
+        echo "Note: SBE streams return '451 Unavailable For Legal Reasons' in CI environment"
 
   security-audit:
     name: Security Audit
