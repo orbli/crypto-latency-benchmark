@@ -19,7 +19,6 @@ fn print_header() {
     println!("{}", "=".repeat(80).bright_blue());
 }
 
-
 #[tokio::main]
 async fn main() {
     // Initialize the rustls crypto provider
@@ -116,11 +115,14 @@ async fn main() {
 
     println!(
         "\n{}",
-        "All production benchmarks completed with live market data!".green().bold()
+        "All production benchmarks completed with live market data!"
+            .green()
+            .bold()
     );
     println!(
         "{}",
-        "Refer to the individual benchmark reports above for detailed performance metrics.".bright_white()
+        "Refer to the individual benchmark reports above for detailed performance metrics."
+            .bright_white()
     );
 
     println!("\n{}", "=".repeat(80).bright_blue());
@@ -142,4 +144,3 @@ async fn main() {
         "cargo run --release fix".bright_white()
     );
 }
-

@@ -708,4 +708,3 @@ pub async fn run_fix_production_benchmark() {
         }
     }
 }
-
